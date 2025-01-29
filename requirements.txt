@@ -1,0 +1,8 @@
+langchain
+langchain_community
+langchain_google_genai
+chardet
+sentence-transformers
+faiss-cpu
+streamlit
+dotenv
