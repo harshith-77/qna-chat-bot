@@ -8,6 +8,9 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import PromptTemplate
 from langchain_google_genai import GoogleGenerativeAI
+from langchain.retrievers import ContextualCompressionRetriever
+from langchain.retrievers.document_compressors import CrossEncoderReranker
+from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 logging.info("Initializing application...")
@@ -16,8 +19,9 @@ load_dotenv()
 
 try:
     embeddings = HuggingFaceEmbeddings()
-    llm = GoogleGenerativeAI(model="gemini-2.0-flash-exp", google_api_key=os.environ['GEMINI_API_KEY'])
-    logging.info("LLM and embeddings initialized successfully.")
+    llm = GoogleGenerativeAI(model="gemini-2.0-flash-exp", google_api_key=os.environ['GEMINI_API_KEY'], temperature=0)
+    reranker_model = HuggingFaceCrossEncoder(model_name="BAAI/bge-reranker-base")
+    logging.info("Models initialized successfully.")
 except Exception as e:
     logging.error(f"Error initializing LLM or embeddings: {e}")
     st.error("Failed to initialize AI components. Check logs for details.")
@@ -81,11 +85,13 @@ if query:
     if st.session_state.vectordb is not None:
         try:
             prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
-            retriever = st.session_state.vectordb.as_retriever(search_kwargs={"k":5})
+            retriever = st.session_state.vectordb.as_retriever(search_kwargs={"k":20})
+            compressor = CrossEncoderReranker(model=reranker_model, top_n=5)
+            reranker_retriever = ContextualCompressionRetriever(base_compressor=compressor, base_retriever=retriever)
             chain = RetrievalQA.from_chain_type(llm=llm,
                                                 chain_type='stuff',
                                                 chain_type_kwargs={"prompt": prompt},
-                                                retriever=retriever,
+                                                retriever=reranker_retriever,
                                                 return_source_documents=True)
             result = chain.invoke(query)
             logging.info(f"Query processed successfully. Result:\n{result}")
